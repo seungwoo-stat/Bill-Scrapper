@@ -3,8 +3,8 @@ library(rvest)
 library(foreach)
 library(doParallel)
 
-pagestart <- 1
-pageend <- 250
+pagestart <- 1 
+pageend <- 252
 
 ## register clusters
 cl <- parallel::makeCluster(detectCores()-1, outfile = "")
@@ -83,9 +83,11 @@ data <- foreach(page=pagestart:pageend, .packages=c('httr2','rvest'), .combine =
   html.bill <- lapply(bill.url,read_html)
   
   for(i.bill in seq_along(bill.urls)){
-    bill.name[i.bill] <- html.bill[[i.bill]] |>
+    title <- html.bill[[i.bill]] |>
       html_nodes(xpath='/html/body/div/div[2]/div[2]/h3/text()') |>
       html_text(trim=TRUE)
+    if(length(title) == 0) next
+    bill.name[i.bill] <- title
     info <- html.bill[[i.bill]] |>
       html_nodes(xpath='/html/body/div/div[2]/div[2]/div/div[3]/div[1]/table/tbody/tr/td') |>
       html_text(trim=TRUE)

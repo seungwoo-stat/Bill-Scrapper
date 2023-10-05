@@ -4,7 +4,7 @@ library(foreach)
 library(doParallel)
 
 pagestart <- 1
-pageend <- 2517
+pageend <- 250
 
 ## register clusters
 cl <- parallel::makeCluster(detectCores()-1, outfile = "")
@@ -32,6 +32,7 @@ data <- foreach(page=pagestart:pageend, .packages=c('httr2','rvest'), .combine =
       proposeGubn="전체",
       strPage=page,  ######## 페이지번호
       tabMenuType= "billSimpleSearch",
+      pageSize=100,
     ) |>
     req_perform()
   
@@ -55,34 +56,37 @@ data <- foreach(page=pagestart:pageend, .packages=c('httr2','rvest'), .combine =
   propose.session = character(n)
   bill.url = character(n)
   proposer.full = character(n)
+  agree.full = character(n)
   decision.date = character(n)
   decision.result = character(n)
   progress.status = character(n)
+  soganwi = character(n)
   
   ### (2) extract infos from each bill
   propose.who <- html.page |>
     html_nodes(xpath='/html/body/div/div[2]/div[2]/div/div[2]/table/tbody/tr[*]/td[3]') |>
     html_text(trim=TRUE)
-  
+
   decision.date <- html.page |>
     html_nodes(xpath='/html/body/div/div[2]/div[2]/div/div[2]/table/tbody/tr[*]/td[5]') |>
     html_text(trim=TRUE)
-  
+
   decision.result <- html.page |>
     html_nodes(xpath='/html/body/div/div[2]/div[2]/div/div[2]/table/tbody/tr[*]/td[6]') |>
     html_text(trim=TRUE)
-  
+
   progress.status <- html.page |>
     html_nodes(xpath='/html/body/div/div[2]/div[2]/div/div[2]/table/tbody/tr[*]/td[8]') |>
     html_text(trim=TRUE)
   
+  bill.url <- paste0("https://likms.assembly.go.kr/bill/billDetail.do?billId=",bill.urls)
+  html.bill <- lapply(bill.url,read_html)
+  
   for(i.bill in seq_along(bill.urls)){
-    bill.url[i.bill] <- paste0("https://likms.assembly.go.kr/bill/billDetail.do?billId=",bill.urls[i.bill])
-    html.bill <- read_html(bill.url[i.bill])
-    bill.name[i.bill] <- html.bill |>
-      html_nodes(xpath='/html/body/div/div[2]/div[2]/h3/text()') |> 
+    bill.name[i.bill] <- html.bill[[i.bill]] |>
+      html_nodes(xpath='/html/body/div/div[2]/div[2]/h3/text()') |>
       html_text(trim=TRUE)
-    info <- html.bill |>
+    info <- html.bill[[i.bill]] |>
       html_nodes(xpath='/html/body/div/div[2]/div[2]/div/div[3]/div[1]/table/tbody/tr/td') |>
       html_text(trim=TRUE)
     bill.num[i.bill] <- info[1]
@@ -90,9 +94,21 @@ data <- foreach(page=pagestart:pageend, .packages=c('httr2','rvest'), .combine =
     proposer.short[i.bill] <- info[3]
     propose.session[i.bill] <- info[5]
     proposer.full[i.bill] <- read_html(paste0("https://likms.assembly.go.kr/bill/coactorListPopup.do?billId=",bill.urls[i.bill])) |>
-      html_nodes(xpath='//*[@id="periodDiv"]/div[2]/div/a') |>
-      html_text(trim=TRUE) |> 
+      html_nodes(xpath='//*[@id="periodDiv"]/div[2]/div[1]/a') |>
+      html_text(trim=TRUE) |>
       paste0(collapse=' ')
+    agree.full[i.bill] <- read_html(paste0("https://likms.assembly.go.kr/bill/coactorListPopup.do?billId=",bill.urls[i.bill])) |>
+      html_nodes(xpath='//*[@id="periodDiv"]/div[2]/div[2]/a') |>
+      html_text(trim=TRUE) |>
+      paste0(collapse=' ')
+    is.soganwi <- "소관위원회" %in% (html.bill[[i.bill]] |>
+      html_nodes(xpath='/html/body/div/div[2]/div[2]/div/div[5]/div/table/thead/tr/th[1]') |>
+      html_text(trim=TRUE))
+    if(is.soganwi){
+      soganwi[i.bill] <- (html.bill[[i.bill]] |>
+        html_nodes(xpath='/html/body/div/div[2]/div[2]/div/div[5]/div/table/tbody/tr/td[1]') |>
+        html_text(trim=TRUE))[[1]]
+    }
   }
   ### (3) return
   cbind(
@@ -104,9 +120,11 @@ data <- foreach(page=pagestart:pageend, .packages=c('httr2','rvest'), .combine =
     propose.session,
     bill.url,
     proposer.full,
+    agree.full,
     decision.date,
     decision.result,
-    progress.status
+    progress.status,
+    soganwi
   )
 }
   
@@ -117,7 +135,8 @@ stopCluster(cl)
 ## change column names
 data <- data.frame(data)
 names(data) <- c('의안명','의안번호','제안일자','제안구분','제안자(short)',
-                 '제안회기','URL','제안자(full)','의결일자','의결결과','심사진행상태')
+                 '제안회기','URL','발의의원(full)','찬성의원(full)','의결일자',
+                 '의결결과','심사진행상태','소관위원회')
 
 View(data)
 
